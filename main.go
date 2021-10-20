@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"github.com/enimatek-nl/go-netmd-lib"
+	"github.com/Jo2003/go-netmd-lib"
 	"log"
 	"os"
 	"strconv"
