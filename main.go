@@ -169,6 +169,8 @@ func main() {
 		group(md, trk, t, safe)
 	case "list":
 		list(md)
+	case "erase_disc":
+		erase_disc(md, safe)
 	default: // help
 		help()
 	}
@@ -193,6 +195,7 @@ func help() {
 	fmt.Println("  rename [number] [title]  Rename the track number.")
 	fmt.Println("  move [number] [to]       Move the track number around.")
 	fmt.Println("  erase [number]           Erase track number from disc.")
+	fmt.Println("  erase_disc               Erase complete disc.")
 	fmt.Println("  group [to] [title]       Put tracks ungrouped up to track number")
 	fmt.Println("                           into a group by the name title.")
 	fmt.Println("  degroup [number]         De-group including all tracks of the")
@@ -257,6 +260,23 @@ func send(md *netmd.NetMD, enc netmd.DiscFormat, fn, t string) {
 	fmt.Println("Done.")
 }
 
+func erase_disc(md *netmd.NetMD, safe bool) {
+
+	if !safe || (safe && AskConfirm(fmt.Sprintf("Do you really want to erase the disc?"))) {
+		// try to erase disc
+		err := md.EraseDisc()
+
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		fmt.Printf("Disc has been erased!")
+
+	} else 	{
+		fmt.Println("Aborted.")
+	}
+}
+
 func list(md *netmd.NetMD) {
 	fmt.Println("")
 	_, total, available, _ := md.RequestDiscCapacity()
@@ -267,7 +287,7 @@ func list(md *netmd.NetMD) {
 
 	root := netmd.NewRoot(discTitle)
 	fmt.Println("")
-	fmt.Printf("💿 %s\n", root.Title)
+	fmt.Printf("%s\n", root.Title)
 	cnt, err := md.RequestTrackCount()
 	if err != nil {
 		log.Fatal(err)
@@ -280,14 +300,14 @@ func list(md *netmd.NetMD) {
 		if _grp != group {
 			group = _grp
 			if group != nil {
-				fmt.Printf(" 📁 %s/\n", group.Title)
+				fmt.Printf("%s/\n", group.Title)
 			}
 		}
 
 		if group != nil {
 			fmt.Printf(" ")
 		}
-		fmt.Printf(" 🎵 %d.", nr+1)
+		fmt.Printf(" %d.", nr+1)
 
 		title, _ := md.RequestTrackTitle(nr)
 		duration, _ := md.RequestTrackLength(nr)
@@ -296,19 +316,19 @@ func list(md *netmd.NetMD) {
 		flag, _ := md.RequestTrackFlag(nr)
 		switch flag {
 		case netmd.TrackProtected:
-			fmt.Print("🔒")
+			fmt.Print("(protected, ")
 		case netmd.TrackUnprotected:
-			fmt.Print("🔓")
+			fmt.Print("(unprotected, ")
 		}
 
 		enc, _ := md.RequestTrackEncoding(nr)
 		switch enc {
 		case netmd.EncLP2:
-			fmt.Print("LP2")
+			fmt.Print("LP2)")
 		case netmd.EncLP4:
-			fmt.Print("LP4")
+			fmt.Print("LP4)")
 		case netmd.EncSP:
-			fmt.Print("SP")
+			fmt.Print("SP)")
 		}
 
 		fmt.Print("\n")
@@ -440,9 +460,9 @@ func ToDateString(s uint64) string {
 	minutes := (s - (3600 * hours)) / 60
 	seconds := s - (3600 * hours) - (minutes * 60)
 	if hours != 0 {
-		return fmt.Sprintf("\u001B[33m%02dh %02dm %02ds\u001B[0m", hours, minutes, seconds)
+		return fmt.Sprintf("%02dh %02dm %02ds", hours, minutes, seconds)
 	} else {
-		return fmt.Sprintf("\u001B[33m%02dm %02ds\u001B[0m", minutes, seconds)
+		return fmt.Sprintf("%02dm %02ds", minutes, seconds)
 	}
 }
 
