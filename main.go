@@ -212,10 +212,17 @@ func help() {
 
 func send(md *netmd.NetMD, enc netmd.DiscFormat, fn, t string) {
 	track, err := md.NewTrack(t, fn)
-	track.DiscFormat = enc
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	// sanity check for sending pre-encoded data
+	if track.Format == netmd.WfPCM {
+		if enc != netmd.DfStereoSP {
+			track.DiscFormat = enc
+		}
+	}
+	
 	c := make(chan netmd.Transfer)
 	go md.Send(track, c)
 
@@ -387,15 +394,10 @@ func rename(md *netmd.NetMD, trk int, t string, safe bool) {
 
 func title(md *netmd.NetMD, t string, safe bool) {
 	if !safe || (safe && AskConfirm(fmt.Sprintf("Do you really want to rename the disc to '%s'?", t))) {
-		d, err := md.RequestDiscHeader()
+		err := md.SetDiscTitle(t)
 		if err == nil {
-			r := netmd.NewRoot(d)
-			r.Title = t
-			err := md.SetDiscHeader(r.ToString())
-			if err == nil {
-				fmt.Println("Disc has been renamed.")
-				return
-			}
+			fmt.Println("Disc has been renamed.")
+			return
 		}
 	}
 	fmt.Println("Aborted.")
