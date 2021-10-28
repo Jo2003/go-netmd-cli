@@ -1,16 +1,18 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
-	"github.com/Jo2003/go-netmd-lib"
 	"log"
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/Jo2003/go-netmd-lib"
 )
 
 const (
-	version = "0.0.6"
+	version = "0.1.3"
 )
 
 func main() {
@@ -169,12 +171,13 @@ func main() {
 		group(md, trk, t, safe)
 	case "list":
 		list(md)
+	case "list_json":
+		listJson(md)
 	case "erase_disc":
 		erase_disc(md, safe)
 	default: // help
 		help()
 	}
-
 }
 
 func help() {
@@ -190,6 +193,7 @@ func help() {
 	fmt.Println("")
 	fmt.Println("Commands:")
 	fmt.Println("  list                     List all track data on the disc.")
+	fmt.Println("  list_json                List disc content in json encoding.")
 	fmt.Println("  send [wav] [title]       Send stereo pcm data to the disc.")
 	fmt.Println("  title [title]            Rename the disc title.")
 	fmt.Println("  rename [number] [title]  Rename the track number.")
@@ -222,7 +226,7 @@ func send(md *netmd.NetMD, enc netmd.DiscFormat, fn, t string) {
 			track.DiscFormat = enc
 		}
 	}
-	
+
 	c := make(chan netmd.Transfer)
 	go md.Send(track, c)
 
@@ -279,7 +283,7 @@ func erase_disc(md *netmd.NetMD, safe bool) {
 
 		fmt.Printf("Disc has been erased!")
 
-	} else 	{
+	} else {
 		fmt.Println("Aborted.")
 	}
 }
@@ -493,4 +497,126 @@ func AskConfirm(q string) bool {
 	default:
 		return AskConfirm(fmt.Sprintf("Please type (y)es or (n)o and then press enter"))
 	}
+}
+
+func listJson(md *netmd.NetMD) {
+
+	type tEncoding string
+
+	const (
+		sp  tEncoding = "sp"
+		lp2 tEncoding = "lp2"
+		lp4 tEncoding = "lp4"
+	)
+
+	type MDTrack struct {
+		No     int
+		Name   string
+		Enc    tEncoding
+		Prot   bool
+		Length string
+	}
+
+	type MDGroup struct {
+		Name   string
+		Tracks []MDTrack
+	}
+
+	type MD struct {
+		Rawheader string
+		Name      string
+		Capacity  string
+		Used      string
+		Free      string
+		FreeSec   uint64
+		TCount    int
+		Groups    []MDGroup
+		Tracks    []MDTrack
+	}
+
+	var mdisc MD
+	var mdgroup MDGroup
+	var mdtrack MDTrack
+
+	_, total, available, _ := md.RequestDiscCapacity()
+	mdisc.Capacity = ToDateString(total)
+	mdisc.Free = ToDateString(available)
+	mdisc.FreeSec = available
+
+	discTitle, _ := md.RequestDiscHeader()
+	mdisc.Rawheader = discTitle
+
+	root := netmd.NewRoot(discTitle)
+	mdisc.Name = root.Title
+
+	cnt, err := md.RequestTrackCount()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	mdisc.TCount = cnt
+
+	var totalDuration uint64
+	var group *netmd.Group
+
+	for nr := 0; nr < cnt; nr++ {
+
+		mdtrack.No = nr + 1
+		title, _ := md.RequestTrackTitle(nr)
+		mdtrack.Name = title
+		duration, _ := md.RequestTrackLength(nr)
+		mdtrack.Length = ToDateString(duration)
+
+		flag, _ := md.RequestTrackFlag(nr)
+		switch flag {
+		case netmd.TrackProtected:
+			mdtrack.Prot = true
+		case netmd.TrackUnprotected:
+			mdtrack.Prot = false
+		}
+
+		enc, _ := md.RequestTrackEncoding(nr)
+		switch enc {
+		case netmd.EncLP2:
+			mdtrack.Enc = lp2
+		case netmd.EncLP4:
+			mdtrack.Enc = lp4
+		case netmd.EncSP:
+			mdtrack.Enc = sp
+		}
+
+		_grp := root.SearchGroup(nr)
+
+		if _grp == nil {
+			mdisc.Tracks = append(mdisc.Tracks, mdtrack)
+		} else {
+			if _grp != group {
+				if group != nil {
+					mdisc.Groups = append(mdisc.Groups, mdgroup)
+				}
+
+				group = _grp
+
+				if group != nil {
+					mdgroup.Name = group.Title
+					mdgroup.Tracks = nil
+					mdgroup.Tracks = append(mdgroup.Tracks, mdtrack)
+				}
+
+			} else {
+				mdgroup.Tracks = append(mdgroup.Tracks, mdtrack)
+			}
+		}
+
+		totalDuration += duration
+	}
+
+	mdisc.Used = ToDateString(totalDuration)
+
+	if group != nil {
+		mdisc.Groups = append(mdisc.Groups, mdgroup)
+	}
+
+	data, _ := json.MarshalIndent(mdisc, "", "    ")
+	fmt.Println(string(data))
 }
