@@ -528,6 +528,7 @@ func listJson(md *netmd.NetMD) {
 		Capacity  string
 		Used      string
 		Free      string
+		TotSec    uint64
 		FreeSec   uint64
 		TCount    int
 		Groups    []MDGroup
@@ -540,6 +541,7 @@ func listJson(md *netmd.NetMD) {
 
 	_, total, available, _ := md.RequestDiscCapacity()
 	mdisc.Capacity = ToDateString(total)
+	mdisc.TotSec = total
 	mdisc.Free = ToDateString(available)
 	mdisc.FreeSec = available
 
