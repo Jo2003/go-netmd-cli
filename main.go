@@ -5,14 +5,16 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"reflect"
 	"strconv"
 	"strings"
 
 	"github.com/Jo2003/go-netmd-lib"
+	"github.com/enimatek-nl/gousb"
 )
 
 const (
-	version = "0.1.3"
+	version = "0.1.4"
 )
 
 func main() {
@@ -89,6 +91,13 @@ func main() {
 			t = strings.Join(os.Args[ptr:], " ")
 		}
 		title(md, t, safe)
+	case "plain_title":
+		ptr++
+		t := ""
+		if len(os.Args) > ptr {
+			t = strings.Join(os.Args[ptr:], " ")
+		}
+		plain_title(md, t, safe)
 	case "move":
 		ptr++
 		if len(os.Args) <= ptr {
@@ -196,6 +205,7 @@ func help() {
 	fmt.Println("  list_json                List disc content in json encoding.")
 	fmt.Println("  send [wav] [title]       Send stereo pcm data to the disc.")
 	fmt.Println("  title [title]            Rename the disc title.")
+	fmt.Println("  plain_title [title]      Rename to plain disc title (removes all groups).")
 	fmt.Println("  rename [number] [title]  Rename the track number.")
 	fmt.Println("  move [number] [to]       Move the track number around.")
 	fmt.Println("  erase [number]           Erase track number from disc.")
@@ -398,6 +408,22 @@ func rename(md *netmd.NetMD, trk int, t string, safe bool) {
 
 func title(md *netmd.NetMD, t string, safe bool) {
 	if !safe || (safe && AskConfirm(fmt.Sprintf("Do you really want to rename the disc to '%s'?", t))) {
+		d, err := md.RequestDiscHeader()
+		if err == nil {
+			r := netmd.NewRoot(d)
+			r.Title = t
+			err := md.SetDiscHeader(r.ToString())
+			if err == nil {
+				fmt.Println("Disc has been renamed.")
+				return
+			}
+		}
+	}
+	fmt.Println("Aborted.")
+}
+
+func plain_title(md *netmd.NetMD, t string, safe bool) {
+	if !safe || (safe && AskConfirm(fmt.Sprintf("Do you really want to rename the disc to '%s'?", t))) {
 		err := md.SetDiscTitle(t)
 		if err == nil {
 			fmt.Println("Disc has been renamed.")
@@ -535,9 +561,18 @@ func listJson(md *netmd.NetMD) {
 		Tracks    []MDTrack
 	}
 
+	type NetMDevice struct {
+		Vendor  gousb.ID
+		Device  gousb.ID
+		Name    string
+		OfLpEnc bool
+		Disc    MD
+	}
+
 	var mdisc MD
 	var mdgroup MDGroup
 	var mdtrack MDTrack
+	var mddevice NetMDevice
 
 	_, total, available, _ := md.RequestDiscCapacity()
 	mdisc.Capacity = ToDateString(total)
@@ -619,6 +654,26 @@ func listJson(md *netmd.NetMD) {
 		mdisc.Groups = append(mdisc.Groups, mdgroup)
 	}
 
-	data, _ := json.MarshalIndent(mdisc, "", "    ")
+	mddevice.Device = md.CDev.Desc.Product
+	mddevice.Vendor = md.CDev.Desc.Vendor
+
+	for _, d := range netmd.Devices {
+
+		d_ := reflect.ValueOf(d)
+		product := d_.FieldByName("deviceId").Uint()
+		vendor := d_.FieldByName("vendorId").Uint()
+		enc_lp := d_.FieldByName("of_lp_enc").Bool()
+		name := d_.FieldByName("name").String()
+
+		if gousb.ID(product) == md.CDev.Desc.Product && gousb.ID(vendor) == md.CDev.Desc.Vendor {
+			mddevice.Name = name
+			mddevice.OfLpEnc = enc_lp
+			break
+		}
+	}
+
+	mddevice.Disc = mdisc
+
+	data, _ := json.MarshalIndent(mddevice, "", "  ")
 	fmt.Println(string(data))
 }
